@@ -284,7 +284,7 @@ services:
       - dokploy-network
     volumes:
       # Mount the redis data directory to the container.
-      - /root/files/redis/data:/data               # Persistent storage for Redis data
+      - redis:/data               # Persistent storage for Redis data
     # Set the redis password when startup redis server.
     command: redis-server --requirepass ${REDIS_PASSWORD:-difyai123456}
     healthcheck:
@@ -306,7 +306,7 @@ services:
       HTTPS_PROXY: ${SANDBOX_HTTPS_PROXY:-http://ssrf_proxy:3128}
       SANDBOX_PORT: ${SANDBOX_PORT:-8194}
     volumes:
-      - /root/files/sandbox/dependencies:/dependencies # Persistent storage for sandbox dependencies
+      - sandbox:/dependencies # Persistent storage for sandbox dependencies
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8194/health" ]
     networks:
@@ -661,4 +661,5 @@ volumes:
   milvus:
   minio:
   milvus_standalone:
-  opensearch: 
+  opensearch:
+  sandbox:
