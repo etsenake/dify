@@ -217,8 +217,8 @@ services:
       - db
       - redis
     volumes:
-      - /root/files/app/storage:/app/api/storage   # Persistent storage for user files
-      - /root/files/app/logs:/app/api/logs         # Persistent storage for logs
+      - app_storage:/app/api/storage   # Persistent storage for user files
+      - app_logs:/app/api/logs         # Persistent storage for logs
     networks:
       - dokploy-network
   # worker service
@@ -236,8 +236,8 @@ services:
       - redis
     volumes:
       # Mount the storage directory to the container, for storing user files.
-      - /root/files/app/storage:/app/api/storage   # Shared persistent storage for user files
-      - /root/files/app/worker_logs:/app/worker/logs # Persistent storage for worker logs
+      - app_storage:/app/api/storage   # Shared persistent storage for user files
+      - app_logs:/app/worker/logs # Persistent storage for worker logs
     networks:
       - dokploy-network
 
@@ -251,8 +251,6 @@ services:
       SENTRY_DSN: ${WEB_SENTRY_DSN:-}
       NEXT_TELEMETRY_DISABLED: ${NEXT_TELEMETRY_DISABLED:-0}
       TEXT_GENERATION_TIMEOUT_MS: ${TEXT_GENERATION_TIMEOUT_MS:-60000}
-    volumes:
-      - /root/files/web/static:/app/static 
     networks: 
       - dokploy-network
   # The postgres database.
@@ -271,7 +269,7 @@ services:
                -c 'maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-64MB}'
                -c 'effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-4096MB}'
     volumes:
-      - /root/files/db/data:/var/lib/postgresql/data  # Persistent storage for database data
+      - db:/var/lib/postgresql/data  # Persistent storage for database data
     healthcheck:
       test: [ "CMD", "pg_isready" ]
       interval: 1s
@@ -342,7 +340,7 @@ services:
     restart: always
     volumes:
       # Mount the Weaviate data directory to the con tainer.
-      - /root/files/weaviate:/var/lib/weaviate
+      - weaviate:/var/lib/weaviate
     environment:
       # The Weaviate configurations
       # You can refer to the [Weaviate](https://weaviate.io/developers/weaviate/config-refs/env-vars) documentation for more information.
@@ -367,7 +365,7 @@ services:
     networks: 
       - dokploy-network
     volumes:
-      - /root/files/qdrant:/qdrant/storage
+      - qdrant:/qdrant/storage
     environment:
       QDRANT_API_KEY: ${QDRANT_API_KEY:-difyai123456}
 
@@ -388,7 +386,7 @@ services:
       # postgres data directory
       PGDATA: ${PGVECTOR_PGDATA:-/var/lib/postgresql/data/pgdata}
     volumes:
-      - /root/files/pgvector/data:/var/lib/postgresql/data
+      - pgvector:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD", "pg_isready" ]
       interval: 1s
@@ -412,7 +410,7 @@ services:
       # postgres data directory
       PGDATA: ${PGVECTOR_PGDATA:-/var/lib/postgresql/data/pgdata}
     volumes:
-      - /root/files/pgvecto_rs/data:/var/lib/postgresql/data
+      - pgvecto_rs:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD", "pg_isready" ]
       interval: 1s
@@ -428,7 +426,7 @@ services:
     networks: 
       - dokploy-network
     volumes:
-      - /root/files/chroma:/chroma/chroma
+      - chroma:/chroma/chroma
     environment:
       CHROMA_SERVER_AUTHN_CREDENTIALS: ${CHROMA_SERVER_AUTHN_CREDENTIALS:-difyai123456}
       CHROMA_SERVER_AUTHN_PROVIDER: ${CHROMA_SERVER_AUTHN_PROVIDER:-chromadb.auth.token_authn.TokenAuthenticationServerProvider}
@@ -461,7 +459,7 @@ services:
       ETCD_QUOTA_BACKEND_BYTES: ${ETCD_QUOTA_BACKEND_BYTES:-4294967296}
       ETCD_SNAPSHOT_COUNT: ${ETCD_SNAPSHOT_COUNT:-50000}
     volumes:
-      - /root/files/milvus/etcd:/etcd
+      - milvus:/etcd
     command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
     healthcheck:
       test: [ "CMD", "etcdctl", "endpoint", "health" ]
@@ -480,7 +478,7 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
     volumes:
-      - /root/files/milvus/minio:/minio_data
+      - minio:/minio_data
     command: minio server /minio_data --console-address ":9001"
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
@@ -501,7 +499,7 @@ services:
       MINIO_ADDRESS: ${MINIO_ADDRESS:-minio:9000}
       common.security.authorizationEnabled: ${MILVUS_AUTHORIZATION_ENABLED:-true}
     volumes:
-      - /root/files/milvus/milvus:/var/lib/milvus
+      - milvus_standalone:/var/lib/milvus
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:9091/healthz" ]
       interval: 30s
@@ -536,7 +534,7 @@ services:
         soft: ${OPENSEARCH_NOFILE_SOFT:-65536}
         hard: ${OPENSEARCH_NOFILE_HARD:-65536}
     volumes:
-      - /root/files/opensearch/data:/usr/share/opensearch/data
+      - opensearch:/usr/share/opensearch/data
     networks:
       - dokploy-network
 
@@ -649,3 +647,18 @@ networks:
 
 volumes:
   oradata:
+  db:
+  redis:
+  es:
+  myscale:
+  app_storage:
+  app_logs:
+  weaviate:
+  qdrant:
+  pgvector:
+  pgvecto_rs:
+  chroma:
+  milvus:
+  minio:
+  milvus_standalone:
+  opensearch: 
