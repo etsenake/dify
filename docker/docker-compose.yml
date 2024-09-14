@@ -274,6 +274,8 @@ services:
   # The postgres database.
   db:
     image: postgres:15-alpine
+    networks: 
+      - dokploy-network
     restart: always
     environment:
       PGUSER: ${PGUSER:-postgres}
@@ -298,6 +300,8 @@ services:
   redis:
     image: redis:6-alpine
     restart: always
+    networks: 
+      - dokploy-network
     volumes:
       # Mount the redis data directory to the container.
       - ./volumes/redis/data:/data
@@ -348,6 +352,7 @@ services:
     networks:
       - ssrf_proxy_network
       - default
+      - dokploy-network
 
   # Certbot service
   # use `docker-compose --profile certbot up` to start the certbot service.
@@ -607,6 +612,7 @@ services:
       - ./volumes/opensearch/data:/usr/share/opensearch/data
     networks:
       - opensearch-net
+      - dokploy-network
 
   opensearch-dashboards:
     container_name: opensearch-dashboards
@@ -619,6 +625,7 @@ services:
       - ./volumes/opensearch/opensearch_dashboards.yml:/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml
     networks:
       - opensearch-net
+      - dokploy-network
     depends_on:
       - opensearch
 
