@@ -211,27 +211,16 @@ services:
     image: langgenius/dify-api:0.8.2
     restart: always
     environment:
-      # Use the shared environment variables.
       <<: *shared-api-worker-env
-      # Startup mode, 'api' starts the API server.
       MODE: api
     depends_on:
       - db
       - redis
     volumes:
-      # Mount the storage directory to the container, for storing user files.
-      - ./volumes/app/storage:/app/api/storage
+      - ../files/app/storage:/app/api/storage   # Persistent storage for user files
+      - ../files/app/logs:/app/api/logs         # Persistent storage for logs
     networks:
-      - ssrf_proxy_network
-      - default
       - dokploy-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.dify-api.rule=Host(`dify-api.etsenake.com`)"
-      - "traefik.http.routers.dify-api.entrypoints=websecure"
-      - "traefik.http.routers.dify-api.tls.certResolver=letsencrypt"
-      - "traefik.http.services.dify-api.loadbalancer.server.port=3000"
-
   # worker service
   # The Celery worker for processing the queue.
   worker:
@@ -247,10 +236,9 @@ services:
       - redis
     volumes:
       # Mount the storage directory to the container, for storing user files.
-      - ./volumes/app/storage:/app/api/storage
+      - ../files/app/storage:/app/api/storage   # Shared persistent storage for user files
+      - ../files/app/worker_logs:/app/worker/logs # Persistent storage for worker logs
     networks:
-      - ssrf_proxy_network
-      - default
       - dokploy-network
 
   # Frontend web application.
@@ -263,14 +251,10 @@ services:
       SENTRY_DSN: ${WEB_SENTRY_DSN:-}
       NEXT_TELEMETRY_DISABLED: ${NEXT_TELEMETRY_DISABLED:-0}
       TEXT_GENERATION_TIMEOUT_MS: ${TEXT_GENERATION_TIMEOUT_MS:-60000}
+    volumes:
+      - ../files/web/static:/app/static 
     networks: 
       - dokploy-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.dify-web.rule=Host(`dify.etsenake.com`)"
-      - "traefik.http.routers.dify-web.entrypoints=websecure"
-      - "traefik.http.routers.dify-web.tls.certResolver=letsencrypt"
-      - "traefik.http.services.dify-web.loadbalancer.server.port=3000"
   # The postgres database.
   db:
     image: postgres:15-alpine
@@ -287,7 +271,7 @@ services:
                -c 'maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-64MB}'
                -c 'effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-4096MB}'
     volumes:
-      - ./volumes/db/data:/var/lib/postgresql/data
+      - ../files/db/data:/var/lib/postgresql/data  # Persistent storage for database data
     healthcheck:
       test: [ "CMD", "pg_isready" ]
       interval: 1s
@@ -298,9 +282,11 @@ services:
   redis:
     image: redis:6-alpine
     restart: always
+    networks: 
+      - dokploy-network
     volumes:
       # Mount the redis data directory to the container.
-      - ./volumes/redis/data:/data
+      - ../files/redis/data:/data               # Persistent storage for Redis data
     # Set the redis password when startup redis server.
     command: redis-server --requirepass ${REDIS_PASSWORD:-difyai123456}
     healthcheck:
@@ -322,11 +308,10 @@ services:
       HTTPS_PROXY: ${SANDBOX_HTTPS_PROXY:-http://ssrf_proxy:3128}
       SANDBOX_PORT: ${SANDBOX_PORT:-8194}
     volumes:
-      - ./volumes/sandbox/dependencies:/dependencies
+      - ../files/sandbox/dependencies:/dependencies # Persistent storage for sandbox dependencies
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8194/health" ]
     networks:
-      - ssrf_proxy_network
       - dokploy-network
 
   # ssrf_proxy server
@@ -347,72 +332,7 @@ services:
       SANDBOX_HOST: ${SSRF_SANDBOX_HOST:-sandbox}
       SANDBOX_PORT: ${SANDBOX_PORT:-8194}
     networks:
-      - ssrf_proxy_network
-      - default
       - dokploy-network
-
-  # Certbot service
-  # use `docker-compose --profile certbot up` to start the certbot service.
-  certbot:
-    image: certbot/certbot
-    profiles:
-      - certbot
-    volumes:
-      - ./volumes/certbot/conf:/etc/letsencrypt
-      - ./volumes/certbot/www:/var/www/html
-      - ./volumes/certbot/logs:/var/log/letsencrypt
-      - ./volumes/certbot/conf/live:/etc/letsencrypt/live
-      - ./certbot/update-cert.template.txt:/update-cert.template.txt
-      - ./certbot/docker-entrypoint.sh:/docker-entrypoint.sh
-    environment:
-      - CERTBOT_EMAIL=${CERTBOT_EMAIL}
-      - CERTBOT_DOMAIN=${CERTBOT_DOMAIN}
-      - CERTBOT_OPTIONS=${CERTBOT_OPTIONS:-}
-    entrypoint: [ "/docker-entrypoint.sh" ]
-    command: [ "tail", "-f", "/dev/null" ]
-
-  # The nginx reverse proxy.
-  # used for reverse proxying the API service and Web service.
-  nginx:
-    image: nginx:latest
-    restart: always
-    networks:
-      - dokploy-network
-    volumes:
-      - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template
-      - ./nginx/proxy.conf.template:/etc/nginx/proxy.conf.template
-      - ./nginx/https.conf.template:/etc/nginx/https.conf.template
-      - ./nginx/conf.d:/etc/nginx/conf.d
-      - ./nginx/docker-entrypoint.sh:/docker-entrypoint-mount.sh
-      - ./nginx/ssl:/etc/ssl # cert dir (legacy)
-      - ./volumes/certbot/conf/live:/etc/letsencrypt/live # cert dir (with certbot container)
-      - ./volumes/certbot/conf:/etc/letsencrypt
-      - ./volumes/certbot/www:/var/www/html
-    entrypoint: [ "sh", "-c", "cp /docker-entrypoint-mount.sh /docker-entrypoint.sh && sed -i 's/\r$$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh && /docker-entrypoint.sh" ]
-    environment:
-      NGINX_SERVER_NAME: ${NGINX_SERVER_NAME:-_}
-      NGINX_HTTPS_ENABLED: ${NGINX_HTTPS_ENABLED:-false}
-      NGINX_SSL_PORT: ${NGINX_SSL_PORT:-443}
-      NGINX_PORT: ${NGINX_PORT:-80}
-      # You're required to add your own SSL certificates/keys to the `./nginx/ssl` directory
-      # and modify the env vars below in .env if HTTPS_ENABLED is true.
-      NGINX_SSL_CERT_FILENAME: ${NGINX_SSL_CERT_FILENAME:-dify.crt}
-      NGINX_SSL_CERT_KEY_FILENAME: ${NGINX_SSL_CERT_KEY_FILENAME:-dify.key}
-      NGINX_SSL_PROTOCOLS: ${NGINX_SSL_PROTOCOLS:-TLSv1.1 TLSv1.2 TLSv1.3}
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES:-auto}
-      NGINX_CLIENT_MAX_BODY_SIZE: ${NGINX_CLIENT_MAX_BODY_SIZE:-15M}
-      NGINX_KEEPALIVE_TIMEOUT: ${NGINX_KEEPALIVE_TIMEOUT:-65}
-      NGINX_PROXY_READ_TIMEOUT: ${NGINX_PROXY_READ_TIMEOUT:-3600s}
-      NGINX_PROXY_SEND_TIMEOUT: ${NGINX_PROXY_SEND_TIMEOUT:-3600s}
-      NGINX_ENABLE_CERTBOT_CHALLENGE: ${NGINX_ENABLE_CERTBOT_CHALLENGE:-false}
-      CERTBOT_DOMAIN: ${CERTBOT_DOMAIN:-}
-    depends_on:
-      - api
-      - web
-    ports:
-      - "${EXPOSE_NGINX_PORT:-80}:${NGINX_PORT:-80}"
-      - "${EXPOSE_NGINX_SSL_PORT:-443}:${NGINX_SSL_PORT:-443}"
-
   # The Weaviate vector store.
   weaviate:
     image: semitechnologies/weaviate:1.19.0
@@ -422,7 +342,7 @@ services:
     restart: always
     volumes:
       # Mount the Weaviate data directory to the con tainer.
-      - ./volumes/weaviate:/var/lib/weaviate
+      - ../files/weaviate:/var/lib/weaviate
     environment:
       # The Weaviate configurations
       # You can refer to the [Weaviate](https://weaviate.io/developers/weaviate/config-refs/env-vars) documentation for more information.
@@ -444,8 +364,10 @@ services:
     profiles:
       - qdrant
     restart: always
+    networks: 
+      - dokploy-network
     volumes:
-      - ./volumes/qdrant:/qdrant/storage
+      - ../files/qdrant:/qdrant/storage
     environment:
       QDRANT_API_KEY: ${QDRANT_API_KEY:-difyai123456}
 
@@ -455,6 +377,8 @@ services:
     profiles:
       - pgvector
     restart: always
+    networks: 
+      - dokploy-network
     environment:
       PGUSER: ${PGVECTOR_PGUSER:-postgres}
       # The password for the default postgres user.
@@ -464,7 +388,7 @@ services:
       # postgres data directory
       PGDATA: ${PGVECTOR_PGDATA:-/var/lib/postgresql/data/pgdata}
     volumes:
-      - ./volumes/pgvector/data:/var/lib/postgresql/data
+      - ../files/pgvector/data:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD", "pg_isready" ]
       interval: 1s
@@ -476,6 +400,8 @@ services:
     image: tensorchord/pgvecto-rs:pg16-v0.3.0
     profiles:
       - pgvecto-rs
+    networks: 
+      - dokploy-network
     restart: always
     environment:
       PGUSER: ${PGVECTOR_PGUSER:-postgres}
@@ -486,7 +412,7 @@ services:
       # postgres data directory
       PGDATA: ${PGVECTOR_PGDATA:-/var/lib/postgresql/data/pgdata}
     volumes:
-      - ./volumes/pgvecto_rs/data:/var/lib/postgresql/data
+      - ../files/pgvecto_rs/data:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD", "pg_isready" ]
       interval: 1s
@@ -499,8 +425,10 @@ services:
     profiles:
       - chroma
     restart: always
+    networks: 
+      - dokploy-network
     volumes:
-      - ./volumes/chroma:/chroma/chroma
+      - ../files/chroma:/chroma/chroma
     environment:
       CHROMA_SERVER_AUTHN_CREDENTIALS: ${CHROMA_SERVER_AUTHN_CREDENTIALS:-difyai123456}
       CHROMA_SERVER_AUTHN_PROVIDER: ${CHROMA_SERVER_AUTHN_PROVIDER:-chromadb.auth.token_authn.TokenAuthenticationServerProvider}
@@ -533,7 +461,7 @@ services:
       ETCD_QUOTA_BACKEND_BYTES: ${ETCD_QUOTA_BACKEND_BYTES:-4294967296}
       ETCD_SNAPSHOT_COUNT: ${ETCD_SNAPSHOT_COUNT:-50000}
     volumes:
-      - ./volumes/milvus/etcd:/etcd
+      - ../files/milvus/etcd:/etcd
     command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
     healthcheck:
       test: [ "CMD", "etcdctl", "endpoint", "health" ]
@@ -541,7 +469,6 @@ services:
       timeout: 20s
       retries: 3
     networks:
-      - milvus
       - dokploy-network
 
   minio:
@@ -553,7 +480,7 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
     volumes:
-      - ./volumes/milvus/minio:/minio_data
+      - ../files/milvus/minio:/minio_data
     command: minio server /minio_data --console-address ":9001"
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
@@ -561,7 +488,6 @@ services:
       timeout: 20s
       retries: 3
     networks:
-      - milvus
       - dokploy-network
 
   milvus-standalone:
@@ -575,7 +501,7 @@ services:
       MINIO_ADDRESS: ${MINIO_ADDRESS:-minio:9000}
       common.security.authorizationEnabled: ${MILVUS_AUTHORIZATION_ENABLED:-true}
     volumes:
-      - ./volumes/milvus/milvus:/var/lib/milvus
+      - ../files/milvus/milvus:/var/lib/milvus
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:9091/healthz" ]
       interval: 30s
@@ -589,7 +515,6 @@ services:
       - 19530:19530
       - 9091:9091
     networks:
-      - milvus
       - dokploy-network
 
   # Opensearch vector database
@@ -611,9 +536,8 @@ services:
         soft: ${OPENSEARCH_NOFILE_SOFT:-65536}
         hard: ${OPENSEARCH_NOFILE_HARD:-65536}
     volumes:
-      - ./volumes/opensearch/data:/usr/share/opensearch/data
+      - ../files/opensearch/data:/usr/share/opensearch/data
     networks:
-      - opensearch-net
       - dokploy-network
 
   opensearch-dashboards:
@@ -624,9 +548,9 @@ services:
     environment:
       OPENSEARCH_HOSTS: '["https://opensearch:9200"]'
     volumes:
-      - ./volumes/opensearch/opensearch_dashboards.yml:/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml
+      - ../files/opensearch/opensearch_dashboards.yml:/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml
     networks:
-      - opensearch-net
+      - dokploy-network
     depends_on:
       - opensearch
 
@@ -638,10 +562,12 @@ services:
       - myscale
     restart: always
     tty: true
+    networks: 
+      - dokploy-network
     volumes:
-      - ./volumes/myscale/data:/var/lib/clickhouse
-      - ./volumes/myscale/log:/var/log/clickhouse-server
-      - ./volumes/myscale/config/users.d/custom_users_config.xml:/etc/clickhouse-server/users.d/custom_users_config.xml
+      - ../files/myscale/data:/var/lib/clickhouse
+      - ../files/myscale/log:/var/log/clickhouse-server
+      - ../files/myscale/config/users.d/custom_users_config.xml:/etc/clickhouse-server/users.d/custom_users_config.xml
     ports:
       - ${MYSCALE_PORT:-8123}:${MYSCALE_PORT:-8123}
 
@@ -654,7 +580,7 @@ services:
       - elasticsearch
     restart: always
     volumes:
-      - dify_es01_data:/usr/share/elasticsearch/data
+      - ../files/es:/usr/share/elasticsearch/data
     environment:
       ELASTIC_PASSWORD: ${ELASTICSEARCH_PASSWORD:-elastic}
       cluster.name: dify-es-cluster
@@ -664,6 +590,8 @@ services:
       xpack.security.enabled: "true"
       xpack.security.enrollment.enabled: "false"
       xpack.security.http.ssl.enabled: "false"
+    networks: 
+      - dokploy-network
     ports:
       - ${ELASTICSEARCH_PORT:-9200}:9200
     healthcheck:
@@ -692,6 +620,8 @@ services:
       I18N_LOCALE: zh-CN
       SERVER_PORT: "5601"
       ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    networks: 
+      - dokploy-network
     ports:
       - ${KIBANA_PORT:-5601}:5601
     healthcheck:
@@ -708,21 +638,14 @@ services:
       - unstructured
     restart: always
     volumes:
-      - ./volumes/unstructured:/app/data
+      - ../files/unstructured:/app/data
+    networks: 
+      - dokploy-network
 
 networks:
   # create a network between sandbox, api and ssrf_proxy, and can not access outside.
-  ssrf_proxy_network:
-    driver: bridge
-    internal: true
-  milvus:
-    driver: bridge
   dokploy-network:
     external: true
-  opensearch-net:
-    driver: bridge
-    internal: true
 
 volumes:
   oradata:
-  dify_es01_data:
