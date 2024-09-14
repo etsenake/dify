@@ -60,6 +60,7 @@ services:
       test: [ "CMD", "curl", "-f", "http://localhost:8194/health" ]
     networks:
       - ssrf_proxy_network
+      - dokploy-network
 
   # ssrf_proxy server
   # for more information, please refer to

@@ -327,6 +327,7 @@ services:
       test: [ "CMD", "curl", "-f", "http://localhost:8194/health" ]
     networks:
       - ssrf_proxy_network
+      - dokploy-network
 
   # ssrf_proxy server
   # for more information, please refer to
@@ -348,6 +349,7 @@ services:
     networks:
       - ssrf_proxy_network
       - default
+      - dokploy-network
 
   # Certbot service
   # use `docker-compose --profile certbot up` to start the certbot service.
@@ -538,6 +540,7 @@ services:
       retries: 3
     networks:
       - milvus
+      - dokploy-network
 
   minio:
     container_name: milvus-minio
@@ -557,6 +560,7 @@ services:
       retries: 3
     networks:
       - milvus
+      - dokploy-network
 
   milvus-standalone:
     container_name: milvus-standalone
@@ -584,6 +588,7 @@ services:
       - 9091:9091
     networks:
       - milvus
+      - dokploy-network
 
   # Opensearch vector database
   opensearch:
@@ -607,6 +612,7 @@ services:
       - ./volumes/opensearch/data:/usr/share/opensearch/data
     networks:
       - opensearch-net
+      - dokploy-network
 
   opensearch-dashboards:
     container_name: opensearch-dashboards
